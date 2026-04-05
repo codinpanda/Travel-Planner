@@ -1,8 +1,7 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
-from typing import List, Tuple
+from typing import List, Dict
 
 # --- Set Page Config ---
 st.set_page_config(page_title="Premium Travel Planner", page_icon="✈️", layout="wide", initial_sidebar_state="expanded")
@@ -51,13 +50,15 @@ def load_data(filepath: str) -> pd.DataFrame:
         # Ensure proper casing
         df['destination'] = df['destination'].astype(str).str.title()
         df['type'] = df['type'].astype(str).str.title()
+        df['transport'] = df['transport'].astype(str).str.title()
         return df
     except FileNotFoundError:
         st.error(f"Critical Error: Data file '{filepath}' not found.")
         st.stop()
 
 
-def render_sidebar(df: pd.DataFrame) -> Tuple[int, List[str], float]:
+def render_sidebar(df: pd.DataFrame) -> Dict:
+    """Renders the comprehensive filtering sidebar."""
     st.sidebar.markdown("## 🎯 Trip Parameters")
     st.sidebar.markdown("Tailor your perfect getaway by adjusting the parameters below.")
     st.sidebar.markdown("---")
@@ -71,8 +72,18 @@ def render_sidebar(df: pd.DataFrame) -> Tuple[int, List[str], float]:
         min_value=min_cost, 
         max_value=max_cost, 
         value=min(15000, max_cost), 
-        step=500,
-        help="Filter out destinations that exceed your maximum spend."
+        step=500
+    )
+
+    st.sidebar.markdown("#### 📅 Duration Settings")
+    min_days = int(df['days'].min())
+    max_days = int(df['days'].max())
+    days = st.sidebar.slider(
+        "Maximum Travel Days", 
+        min_value=min_days, 
+        max_value=max_days, 
+        value=max_days, 
+        step=1
     )
 
     st.sidebar.markdown("#### 🌴 Experience Type")
@@ -80,8 +91,15 @@ def render_sidebar(df: pd.DataFrame) -> Tuple[int, List[str], float]:
     selected_types = st.sidebar.multiselect(
         "Travel Type(s)", 
         options=available_types, 
-        default=available_types,
-        help="Select the kind of trip you want to have."
+        default=available_types
+    )
+    
+    st.sidebar.markdown("#### ✈️ Transport Options")
+    available_transport = df['transport'].unique().tolist()
+    selected_transport = st.sidebar.multiselect(
+        "Transport Mode(s)", 
+        options=available_transport, 
+        default=available_transport
     )
 
     st.sidebar.markdown("#### ⭐ Quality Standards")
@@ -90,23 +108,47 @@ def render_sidebar(df: pd.DataFrame) -> Tuple[int, List[str], float]:
         min_value=float(df['rating'].min()), 
         max_value=5.0, 
         value=4.0, 
-        step=0.1,
-        help="Only show destinations rated consistently highly by travelers."
+        step=0.1
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.info("💡 **Pro Tip**: Tweak your budget and rating to see how destination clusters adjust in real-time.")
+    
+    sort_by = st.sidebar.selectbox(
+        "🔀 Sort Results By", 
+        ("Rating (High to Low)", "Cost (Low to High)", "Cost (High to Low)", "Duration (Short to Long)")
+    )
+    
+    st.sidebar.info("💡 **Pro Tip**: Filters use AND logic (all conditions must be met).")
 
-    return budget, selected_types, min_rating
+    return {
+        "budget": budget,
+        "days": days,
+        "types": selected_types,
+        "transport": selected_transport,
+        "min_rating": min_rating,
+        "sort_by": sort_by
+    }
 
 
-def process_data(df: pd.DataFrame, budget: int, types: List[str], min_rating: float) -> pd.DataFrame:
+def process_data(df: pd.DataFrame, filters: Dict) -> pd.DataFrame:
+    """Filters dataframe using multi-metric logic and applies sorting."""
     filtered_df = df[
-        (df['cost'] <= budget) & 
-        (df['type'].isin(types)) & 
-        (df['rating'] >= min_rating)
+        (df['cost'] <= filters['budget']) & 
+        (df['days'] <= filters['days']) &
+        (df['type'].isin(filters['types'])) & 
+        (df['transport'].isin(filters['transport'])) &
+        (df['rating'] >= filters['min_rating'])
     ]
-    return filtered_df.sort_values(by='rating', ascending=False)
+    
+    sort_mapping = {
+        "Rating (High to Low)": ("rating", False),
+        "Cost (Low to High)": ("cost", True),
+        "Cost (High to Low)": ("cost", False),
+        "Duration (Short to Long)": ("days", True)
+    }
+    
+    sort_col, ascending = sort_mapping[filters["sort_by"]]
+    return filtered_df.sort_values(by=sort_col, ascending=ascending)
 
 
 def render_metrics(df: pd.DataFrame):
@@ -134,10 +176,9 @@ def render_visualizations(df: pd.DataFrame):
     render_metrics(df)
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Dual Columns for charts
-    col_chart1, col_chart2 = st.columns([3, 2])
+    st.markdown("### 📊 Cost vs Rating Scatter Analysis")
+    st.markdown("<p style='color: gray; font-size: 0.95rem; margin-top: -10px;'>Hover over any bubble to see destination details. Bubble size corresponds to trip duration.</p>", unsafe_allow_html=True)
     
-    # High-contrast accessible color palette replacing the static colors
     travel_type_colors = {
         'Adventure': '#EF4444', # Red
         'Chill': '#3B82F6',    # Blue
@@ -145,83 +186,62 @@ def render_visualizations(df: pd.DataFrame):
         'Luxury': '#F59E0B'    # Amber
     }
     
-    with col_chart1:
-        st.markdown("### 📊 Cost vs Rating Distribution")
-        fig = px.scatter(
-            df.head(50), # Limit to top 50 to keep chart readable
-            x="rating",
-            y="cost",
-            color="type",
-            size="days", 
-            hover_name="destination",
-            hover_data={"location": True, "days": True, "type": False, "rating": True, "cost": True},
-            labels={"rating": "Rating ⭐", "cost": "Cost (INR) 💰", "type": "Experience"},
-            color_discrete_map=travel_type_colors
-        )
-        
-        # Transparent background allows Streamlit theme to show through naturally
-        fig.update_layout(
-            xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'), 
-            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
-        # Use theme="streamlit" internally
-        st.plotly_chart(fig, use_container_width=True, theme="streamlit")
-
-    with col_chart2:
-        st.markdown("### 🗺️ Destination Styles")
-        type_counts = df['type'].value_counts().reset_index()
-        type_counts.columns = ['type', 'count']
-        
-        # Donut Chart
-        fig_pie = px.pie(
-            type_counts, 
-            values='count', 
-            names='type',
-            hole=0.5,
-            color_discrete_map=travel_type_colors
-        )
-        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        fig_pie.update_layout(
-            showlegend=False,
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
-        st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
+    # Expanded full-width chart (removed redundant donut chart)
+    fig = px.scatter(
+        df.head(100), # Limit to top 100 to keep chart readable
+        x="rating",
+        y="cost",
+        color="type",
+        size="days", 
+        hover_name="destination",
+        hover_data={"location": True, "days": True, "type": False, "rating": True, "cost": True},
+        labels={"rating": "Rating ⭐", "cost": "Cost (INR) 💰", "type": "Experience"},
+        color_discrete_map=travel_type_colors
+    )
+    
+    fig.update_layout(
+        xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'), 
+        yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=20, b=0),
+        height=450  # increased emphasis on the main chart
+    )
+    st.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
     st.markdown("---")
-    st.markdown("### 🏆 Top Recommended Destinations Directory")
+    st.markdown("### 🏆 Curated Destination Directory")
     
-    # Styled Dataframe presentation
-    display_cols = ['destination', 'location', 'type', 'days', 'cost', 'rating', 'transport']
-    presentation_df = df[display_cols].head(15).copy()
-    
-    # Format Currency and Strings for UI
-    presentation_df['cost'] = presentation_df['cost'].apply(lambda x: f"₹{x:,.0f}")
-    presentation_df['rating'] = presentation_df['rating'].apply(lambda x: f"{x} ⭐")
-    presentation_df['days'] = presentation_df['days'].apply(lambda x: f"{x} Days")
-    
-    # Rename columns for display
-    presentation_df.columns = ["Destination", "Country / Region", "Experience Style", "Duration", "Total Cost", "Rating", "Transport Mode"]
+    # Styled Dataframe utilizing Native Streamlit Column Config handling Formatters
+    display_cols = ['destination', 'location', 'type', 'days', 'transport', 'cost', 'rating']
+    presentation_df = df[display_cols].copy()
     
     st.dataframe(
         presentation_df,
         use_container_width=True,
         hide_index=True,
-        height=400
+        height=500,
+        column_config={
+            "destination": st.column_config.TextColumn("Destination", width="medium"),
+            "location": st.column_config.TextColumn("Country / Region"),
+            "type": st.column_config.TextColumn("Experience Style"),
+            "days": st.column_config.NumberColumn("Duration", format="%d Days"),
+            "transport": st.column_config.TextColumn("Transport Mode"),
+            "cost": st.column_config.NumberColumn("Total Cost", format="₹%d"),
+            "rating": st.column_config.NumberColumn("Quality Rating", format="%.1f ⭐")
+        }
     )
 
 
 def main():
     st.title("✈️ Premium Global Travel Planner")
-    st.markdown("<p style='font-size: 1.1rem;'>Discover algorithmically optimized travel destinations curated by your personalized budget, preference, and global quality ratings.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 1.1rem;'>Discover algorithmically optimized travel destinations curated by your personalized budget, preference, duration, and global quality ratings.</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     df = load_data("travel_500.csv")
-    budget, selected_types, min_rating = render_sidebar(df)
+    filters = render_sidebar(df)
     
-    recommended_df = process_data(df, budget, selected_types, min_rating)
+    recommended_df = process_data(df, filters)
     render_visualizations(recommended_df)
 
 
