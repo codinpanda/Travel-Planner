@@ -8,11 +8,11 @@ from typing import List, Tuple
 st.set_page_config(page_title="Premium Travel Planner", page_icon="✈️", layout="wide", initial_sidebar_state="expanded")
 
 # --- Custom CSS for Premium Look ---
+# Removing hardcoded colors to maintain 100% compatibility with Light/Dark mode themes!
 st.markdown("""
     <style>
-    /* Main Background & Fonts */
+    /* Main Fonts */
     .stApp {
-        background-color: #f8f9fa;
         font-family: 'Inter', sans-serif;
     }
     
@@ -23,31 +23,21 @@ st.markdown("""
     
     /* Metrics Styling */
     div[data-testid="stMetricValue"] {
-        font-size: 2rem !important;
+        font-size: 2.2rem !important;
         font-weight: 700 !important;
-        color: #1E3A8A !important;
     }
     div[data-testid="stMetricLabel"] {
-        font-size: 1rem !important;
+        font-size: 1.1rem !important;
         font-weight: 500 !important;
-        color: #64748B !important;
     }
     
     /* Title Styling */
     h1 {
-        color: #0F172A;
         font-weight: 800;
         letter-spacing: -1px;
     }
     h2, h3 {
-        color: #334155;
         font-weight: 600;
-    }
-    
-    /* Custom Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -147,6 +137,14 @@ def render_visualizations(df: pd.DataFrame):
     # Dual Columns for charts
     col_chart1, col_chart2 = st.columns([3, 2])
     
+    # High-contrast accessible color palette replacing the static colors
+    travel_type_colors = {
+        'Adventure': '#EF4444', # Red
+        'Chill': '#3B82F6',    # Blue
+        'Cultural': '#8B5CF6', # Purple
+        'Luxury': '#F59E0B'    # Amber
+    }
+    
     with col_chart1:
         st.markdown("### 📊 Cost vs Rating Distribution")
         fig = px.scatter(
@@ -158,19 +156,19 @@ def render_visualizations(df: pd.DataFrame):
             hover_name="destination",
             hover_data={"location": True, "days": True, "type": False, "rating": True, "cost": True},
             labels={"rating": "Rating ⭐", "cost": "Cost (INR) 💰", "type": "Experience"},
-            color_discrete_sequence=['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
-            template="plotly_white"
+            color_discrete_map=travel_type_colors
         )
         
-        fig.update_traces(marker=dict(line=dict(width=1, color='DarkSlateGrey')))
+        # Transparent background allows Streamlit theme to show through naturally
         fig.update_layout(
-            xaxis=dict(showgrid=True, gridcolor='#e2e8f0'), 
-            yaxis=dict(showgrid=True, gridcolor='#e2e8f0'),
+            xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'), 
+            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=0, r=0, t=30, b=0)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        # Use theme="streamlit" internally
+        st.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
     with col_chart2:
         st.markdown("### 🗺️ Destination Styles")
@@ -183,17 +181,14 @@ def render_visualizations(df: pd.DataFrame):
             values='count', 
             names='type',
             hole=0.5,
-            color_discrete_sequence=['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
-            template="plotly_white"
+            color_discrete_map=travel_type_colors
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         fig_pie.update_layout(
             showlegend=False,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=0, r=0, t=30, b=0)
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
 
     st.markdown("---")
     st.markdown("### 🏆 Top Recommended Destinations Directory")
@@ -220,7 +215,7 @@ def render_visualizations(df: pd.DataFrame):
 
 def main():
     st.title("✈️ Premium Global Travel Planner")
-    st.markdown("<p style='font-size: 1.1rem; color: #64748B;'>Discover algorithmically optimized travel destinations curated by your personalized budget, preference, and global quality ratings.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 1.1rem;'>Discover algorithmically optimized travel destinations curated by your personalized budget, preference, and global quality ratings.</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     df = load_data("travel_500.csv")
